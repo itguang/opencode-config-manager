@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createPinia, setActivePinia } from 'pinia';
 
 import {
   collectConfigReferences,
@@ -11,6 +12,7 @@ import {
 } from '../src/lib/opencode-config.js';
 import { normalizeEnvironmentName } from '../src/lib/environment-name.js';
 import { normalizePreferencesForStorage } from '../src/lib/config-manager-preferences.js';
+import { useConfigManagerStore } from '../src/stores/config-manager.js';
 
 test('parses jsonc config text with comments and trailing commas', () => {
   const parsed = parseConfigText(`{
@@ -98,6 +100,7 @@ test('normalizes preferences into a cloneable plain object', () => {
     autoBackup: true,
     defaultPath: '~/.config/opencode/opencode.json',
     testTimeout: 5000,
+    lastAppliedEnvironmentId: 'daily-env',
   }, {});
 
   assert.throws(() => structuredClone(source));
@@ -108,8 +111,53 @@ test('normalizes preferences into a cloneable plain object', () => {
     autoBackup: true,
     defaultPath: '~/.config/opencode/opencode.json',
     testTimeout: 5000,
+    lastAppliedEnvironmentId: 'daily-env',
   });
   assert.doesNotThrow(() => structuredClone(normalized));
+});
+
+test('records the active environment as the current effective source after apply', async () => {
+  const persisted = [];
+  global.window = {
+    utools: {
+      dbStorage: {
+        getItem: () => null,
+        setItem: (key, value) => {
+          persisted.push({ key, value });
+        },
+      },
+    },
+    services: {
+      getDefaultOpencodeConfigPath: () => '/tmp/opencode.json',
+      writeOpencodeConfig: async ({ path, content, backup }) => ({
+        path,
+        backupPath: backup ? '/tmp/opencode.json.bak' : '',
+        content,
+      }),
+    },
+  };
+
+  setActivePinia(createPinia());
+  const store = useConfigManagerStore();
+  store.initialize();
+  store.createEnvironment('Daily');
+
+  const appliedEnvironmentId = store.activeEnvironmentId;
+  const result = await store.applyActive();
+
+  assert.equal(result.ok, true);
+  assert.equal(store.lastAppliedEnvironmentId, appliedEnvironmentId);
+  assert.deepEqual(persisted.at(-1), {
+    key: 'opencode-config-manager.preferences',
+    value: {
+      autoBackup: true,
+      defaultPath: '/tmp/opencode.json',
+      testTimeout: 5000,
+      lastAppliedEnvironmentId: appliedEnvironmentId,
+    },
+  });
+
+  delete global.window;
 });
 
 test('normalizes environment names for inline rename commit', () => {

@@ -29,7 +29,11 @@ const sections = [
 ];
 
 const activeEnvironment = computed(() => store.activeEnvironment);
+const lastAppliedEnvironment = computed(() => (
+  store.environments.find((item) => item.id === store.lastAppliedEnvironmentId) || null
+));
 const isEditingActiveEnvironment = computed(() => editingEnvironmentId.value === activeEnvironment.value.id);
+const isViewingAppliedEnvironment = computed(() => activeEnvironment.value.id === lastAppliedEnvironment.value?.id);
 const draft = computed(() => activeEnvironment.value.draft);
 const providerEntries = computed(() => store.providerEntries);
 const selectedProvider = computed(() => store.selectedProvider);
@@ -599,7 +603,12 @@ function jumpToNextStep() {
             />
             <span v-else @dblclick.stop="startEnvironmentRename(item.id, item.name)">{{ item.name }}</span>
             <div class="environment-pill-meta">
-              <small>{{ item.isDirty ? '未应用' : '同步' }}</small>
+              <div class="environment-pill-statuses">
+                <small v-if="item.id === store.lastAppliedEnvironmentId" class="environment-status environment-status-live">当前生效</small>
+                <small class="environment-status" :class="item.isDirty ? 'environment-status-dirty' : 'environment-status-synced'">
+                  {{ item.isDirty ? '未应用' : '同步' }}
+                </small>
+              </div>
               <div class="environment-pill-actions" @click.stop>
                 <el-button text size="small" class="environment-inline-button" @click="store.cloneActiveEnvironment">复制</el-button>
                 <el-button
@@ -698,6 +707,12 @@ function jumpToNextStep() {
                 <strong>最近应用</strong>
                 <span class="status-value neutral">{{ activeEnvironment.lastAppliedAt ? '已执行' : '未执行' }}</span>
               </div>
+              <div class="feedback-row overview-status-row">
+                <strong>当前生效</strong>
+                <span class="status-value" :class="lastAppliedEnvironment ? 'success' : 'neutral'">
+                  {{ lastAppliedEnvironment ? lastAppliedEnvironment.name : '未执行' }}
+                </span>
+              </div>
             </div>
           </div>
           <div class="overview-meta">
@@ -711,6 +726,10 @@ function jumpToNextStep() {
                 <span>{{ activeEnvironment.lastAppliedAt ? new Date(activeEnvironment.lastAppliedAt).toLocaleString() : '未执行' }}</span>
               </div>
               <div class="feedback-row subtle-row">
+                <strong>当前生效来源</strong>
+                <span>{{ lastAppliedEnvironment ? lastAppliedEnvironment.name : '未执行' }}</span>
+              </div>
+              <div class="feedback-row subtle-row">
                 <strong>当前路径</strong>
                 <span>{{ activeEnvironment.sourcePath || '未设置' }}</span>
               </div>
@@ -721,6 +740,9 @@ function jumpToNextStep() {
               <div class="hero-metric"><span>Provider</span><strong>{{ providerEntries.length }}</strong></div>
               <div class="hero-metric"><span>MCP</span><strong>{{ mcpEntries.length }}</strong></div>
             </div>
+          </div>
+          <div v-if="lastAppliedEnvironment && !isViewingAppliedEnvironment" class="overview-effective-hint">
+            当前正在编辑 {{ activeEnvironment.name }}，已应用到配置的是 {{ lastAppliedEnvironment.name }}。
           </div>
           <div class="overview-issues">
             <div class="card-toolbar compact-toolbar">
