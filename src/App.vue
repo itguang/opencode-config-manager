@@ -1,31 +1,22 @@
 <script lang="ts" setup>
 import { onMounted, ref } from 'vue';
-import Hello from './Hello/index.vue'
-import Read from './Read/index.vue'
-import Write from './Write/index.vue'
 
-const route = ref('')
-const enterAction = ref({})
+import ConfigManager from './ConfigManager/index.vue';
+
+const route = ref('');
+const enterAction = ref<Record<string, unknown>>({});
 
 onMounted(() => {
   window.utools.onPluginEnter((action) => {
-    route.value = action.code
-    enterAction.value = action
-  })
-  window.utools.onPluginOut((isKill) => {
-    route.value = ''
-  })
-})
+    route.value = action.code;
+    enterAction.value = action;
+  });
+  window.utools.onPluginOut(() => {
+    route.value = '';
+  });
+});
 </script>
 
 <template>
-  <template v-if="route === 'hello'">
-    <Hello :enterAction="enterAction"></Hello>
-  </template>
-  <template v-if="route === 'read'">
-    <Read :enterAction="enterAction"></Read>
-  </template>
-  <template v-if="route === 'write'">
-    <Write :enterAction="enterAction"></Write>
-  </template>
+  <ConfigManager v-if="route === 'config-manager'" :enter-action="enterAction" />
 </template>
