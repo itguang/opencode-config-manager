@@ -3,7 +3,7 @@ export function normalizePreferencesForStorage(preferences) {
     autoBackup: Boolean(preferences?.autoBackup),
     defaultPath: typeof preferences?.defaultPath === 'string' ? preferences.defaultPath : '',
     testTimeout: Number.isFinite(preferences?.testTimeout) ? preferences.testTimeout : 5000,
-    lastAppliedEnvironmentId: typeof preferences?.lastAppliedEnvironmentId === 'string' ? preferences.lastAppliedEnvironmentId : '',
+    lastAppliedEnvironmentName: typeof preferences?.lastAppliedEnvironmentName === 'string' ? preferences.lastAppliedEnvironmentName : '',
   }));
 
   return value;

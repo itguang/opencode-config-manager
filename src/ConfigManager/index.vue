@@ -29,11 +29,8 @@ const sections = [
 ];
 
 const activeEnvironment = computed(() => store.activeEnvironment);
-const lastAppliedEnvironment = computed(() => (
-  store.environments.find((item) => item.id === store.lastAppliedEnvironmentId) || null
-));
+const appliedEnvironmentLabel = computed(() => store.lastAppliedEnvironmentName || '');
 const isEditingActiveEnvironment = computed(() => editingEnvironmentId.value === activeEnvironment.value.id);
-const isViewingAppliedEnvironment = computed(() => activeEnvironment.value.id === lastAppliedEnvironment.value?.id);
 const draft = computed(() => activeEnvironment.value.draft);
 const providerEntries = computed(() => store.providerEntries);
 const selectedProvider = computed(() => store.selectedProvider);
@@ -601,14 +598,11 @@ function jumpToNextStep() {
               @keydown.enter.prevent="commitEnvironmentRename(item.id, item.name)"
               @keydown.esc.prevent="cancelEnvironmentRename"
             />
-            <span v-else @dblclick.stop="startEnvironmentRename(item.id, item.name)">{{ item.name }}</span>
+            <span v-else class="environment-pill-name" @dblclick.stop="startEnvironmentRename(item.id, item.name)">{{ item.name }}</span>
             <div class="environment-pill-meta">
-              <div class="environment-pill-statuses">
-                <small v-if="item.id === store.lastAppliedEnvironmentId" class="environment-status environment-status-live">当前生效</small>
-                <small class="environment-status" :class="item.isDirty ? 'environment-status-dirty' : 'environment-status-synced'">
-                  {{ item.isDirty ? '未应用' : '同步' }}
-                </small>
-              </div>
+              <small class="environment-status" :class="item.isDirty ? 'environment-status-dirty' : 'environment-status-synced'">
+                {{ item.isDirty ? '未应用' : '同步' }}
+              </small>
               <div class="environment-pill-actions" @click.stop>
                 <el-button text size="small" class="environment-inline-button" @click="store.cloneActiveEnvironment">复制</el-button>
                 <el-button
@@ -709,8 +703,8 @@ function jumpToNextStep() {
               </div>
               <div class="feedback-row overview-status-row">
                 <strong>当前生效</strong>
-                <span class="status-value" :class="lastAppliedEnvironment ? 'success' : 'neutral'">
-                  {{ lastAppliedEnvironment ? lastAppliedEnvironment.name : '未执行' }}
+                <span class="status-value" :class="appliedEnvironmentLabel ? 'success' : 'neutral'">
+                  {{ appliedEnvironmentLabel || '未执行' }}
                 </span>
               </div>
             </div>
@@ -727,7 +721,7 @@ function jumpToNextStep() {
               </div>
               <div class="feedback-row subtle-row">
                 <strong>当前生效来源</strong>
-                <span>{{ lastAppliedEnvironment ? lastAppliedEnvironment.name : '未执行' }}</span>
+                <span>{{ appliedEnvironmentLabel || '未执行' }}</span>
               </div>
               <div class="feedback-row subtle-row">
                 <strong>当前路径</strong>
@@ -741,8 +735,8 @@ function jumpToNextStep() {
               <div class="hero-metric"><span>MCP</span><strong>{{ mcpEntries.length }}</strong></div>
             </div>
           </div>
-          <div v-if="lastAppliedEnvironment && !isViewingAppliedEnvironment" class="overview-effective-hint">
-            当前正在编辑 {{ activeEnvironment.name }}，已应用到配置的是 {{ lastAppliedEnvironment.name }}。
+          <div v-if="appliedEnvironmentLabel && activeEnvironment.name !== appliedEnvironmentLabel" class="overview-effective-hint">
+            当前正在编辑 {{ activeEnvironment.name }}，已应用到配置的是 {{ appliedEnvironmentLabel }}。
           </div>
           <div class="overview-issues">
             <div class="card-toolbar compact-toolbar">

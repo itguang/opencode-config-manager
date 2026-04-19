@@ -313,8 +313,11 @@ small {
   min-height: 50px;
 }
 
-.environment-pill.active::after {
-  content: none;
+.environment-pill-name {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
 .environment-pill-meta {
@@ -324,25 +327,12 @@ small {
   margin-left: auto;
 }
 
-.environment-pill-statuses {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-}
-
 .environment-status {
   padding: 2px 8px;
   border-radius: 999px;
   background: rgba(25, 42, 70, 0.06);
   color: var(--ocm-text-soft);
   font-weight: 700;
-}
-
-.environment-status-live {
-  background: rgba(12, 140, 99, 0.12);
-  color: var(--ocm-success);
 }
 
 .environment-status-dirty {

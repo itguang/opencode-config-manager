@@ -100,7 +100,7 @@ test('normalizes preferences into a cloneable plain object', () => {
     autoBackup: true,
     defaultPath: '~/.config/opencode/opencode.json',
     testTimeout: 5000,
-    lastAppliedEnvironmentId: 'daily-env',
+    lastAppliedEnvironmentName: 'Daily',
   }, {});
 
   assert.throws(() => structuredClone(source));
@@ -111,7 +111,7 @@ test('normalizes preferences into a cloneable plain object', () => {
     autoBackup: true,
     defaultPath: '~/.config/opencode/opencode.json',
     testTimeout: 5000,
-    lastAppliedEnvironmentId: 'daily-env',
+    lastAppliedEnvironmentName: 'Daily',
   });
   assert.doesNotThrow(() => structuredClone(normalized));
 });
@@ -146,14 +146,14 @@ test('records the active environment as the current effective source after apply
   const result = await store.applyActive();
 
   assert.equal(result.ok, true);
-  assert.equal(store.lastAppliedEnvironmentId, appliedEnvironmentId);
+  assert.equal(store.lastAppliedEnvironmentName, 'Daily');
   assert.deepEqual(persisted.at(-1), {
     key: 'opencode-config-manager.preferences',
     value: {
       autoBackup: true,
       defaultPath: '/tmp/opencode.json',
       testTimeout: 5000,
-      lastAppliedEnvironmentId: appliedEnvironmentId,
+      lastAppliedEnvironmentName: 'Daily',
     },
   });
 

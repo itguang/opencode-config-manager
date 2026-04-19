@@ -43,7 +43,7 @@ export const useConfigManagerStore = defineStore('config-manager', {
     selectedSection: 'overview',
     environments: [createEnvironment()],
     activeEnvironmentId: '',
-    lastAppliedEnvironmentId: '',
+    lastAppliedEnvironmentName: '',
     selectedProviderId: '',
     selectedModelId: '',
     selectedMcpId: '',
@@ -117,13 +117,13 @@ export const useConfigManagerStore = defineStore('config-manager', {
         defaultPath: typeof stored.defaultPath === 'string' ? stored.defaultPath : this.settings.defaultPath,
         testTimeout: Number.isFinite(stored.testTimeout) ? stored.testTimeout : this.settings.testTimeout,
       };
-      this.lastAppliedEnvironmentId = typeof stored.lastAppliedEnvironmentId === 'string' ? stored.lastAppliedEnvironmentId : '';
+      this.lastAppliedEnvironmentName = typeof stored.lastAppliedEnvironmentName === 'string' ? stored.lastAppliedEnvironmentName : '';
     },
 
     persistPreferences() {
       const payload = normalizePreferencesForStorage({
         ...this.settings,
-        lastAppliedEnvironmentId: this.lastAppliedEnvironmentId,
+        lastAppliedEnvironmentName: this.lastAppliedEnvironmentName,
       });
       window.utools?.dbStorage.setItem(STORAGE_KEY, payload);
     },
@@ -152,10 +152,6 @@ export const useConfigManagerStore = defineStore('config-manager', {
       this.environments = this.environments.filter((item) => item.id !== id);
       if (this.activeEnvironmentId === id) {
         this.activeEnvironmentId = this.environments[0].id;
-      }
-      if (this.lastAppliedEnvironmentId === id) {
-        this.lastAppliedEnvironmentId = '';
-        this.persistPreferences();
       }
     },
 
@@ -287,7 +283,7 @@ export const useConfigManagerStore = defineStore('config-manager', {
       this.activeEnvironment.jsonText = content;
       this.activeEnvironment.isDirty = false;
       this.activeEnvironment.lastAppliedAt = new Date().toISOString();
-      this.lastAppliedEnvironmentId = this.activeEnvironment.id;
+      this.lastAppliedEnvironmentName = this.activeEnvironment.name;
       this.suspendDraftWatch = false;
 
       this.settings.defaultPath = response.path;
