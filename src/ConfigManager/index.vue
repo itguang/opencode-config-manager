@@ -1,16 +1,21 @@
 <script lang="ts" setup>
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 
 import KeyValueEditor from '../components/KeyValueEditor.vue';
 import StringListEditor from '../components/StringListEditor.vue';
+import { normalizeEnvironmentName } from '../lib/environment-name.js';
+import { getModelOptions } from '../lib/opencode-config.js';
 import { useConfigManagerStore } from '../stores/config-manager.js';
 
 const store = useConfigManagerStore();
 const permissionMode = ref<'simple' | 'advanced'>('simple');
+const permissionPanels = ref<string[]>([]);
 const runtimePanels = ref(['plugins', 'instructions']);
 const providerPanels = ref(['provider-core', 'model-core']);
 const mcpPanels = ref(['mcp-core']);
+const editingEnvironmentId = ref('');
+const editingEnvironmentName = ref('');
 
 const sections = [
   { id: 'overview', label: '概览' },
@@ -24,6 +29,7 @@ const sections = [
 ];
 
 const activeEnvironment = computed(() => store.activeEnvironment);
+const isEditingActiveEnvironment = computed(() => editingEnvironmentId.value === activeEnvironment.value.id);
 const draft = computed(() => activeEnvironment.value.draft);
 const providerEntries = computed(() => store.providerEntries);
 const selectedProvider = computed(() => store.selectedProvider);
@@ -31,12 +37,7 @@ const selectedModel = computed(() => store.selectedModel);
 const mcpEntries = computed(() => store.mcpEntries);
 const selectedMcp = computed(() => store.selectedMcp);
 
-const modelOptions = computed(() => providerEntries.value.flatMap(([providerId, providerValue]) =>
-  Object.keys(providerValue.models || {}).map((modelId) => ({
-    label: `${providerId}/${modelId}`,
-    value: `${providerId}/${modelId}`,
-  })),
-));
+const modelOptions = computed(() => getModelOptions(draft.value.provider));
 
 const selectedProviderOptions = computed({
   get: () => selectedProvider.value?.options || {},
@@ -218,6 +219,96 @@ const overviewStatus = computed(() => {
   };
 });
 
+function resolveSectionFromPath(path: string) {
+  if (!path) {
+    return 'overview';
+  }
+  if (path.startsWith('permission')) {
+    return 'permissions';
+  }
+  if (path.startsWith('mcp')) {
+    return 'mcp';
+  }
+  if (['model', 'small_model', 'provider', 'disabled_providers'].some((token) => path.startsWith(token))) {
+    return 'providers';
+  }
+  if (['plugin', 'instructions', 'server', 'watcher', 'compaction'].some((token) => path.startsWith(token))) {
+    return 'runtime';
+  }
+  return 'overview';
+}
+
+const issueItems = computed(() => {
+  const parseItems = activeEnvironment.value.parseErrors.map((item) => ({
+    id: `parse-${item.offset}-${item.error}`,
+    level: 'error',
+    title: item.error,
+    detail: `JSON 解析位置 offset ${item.offset}`,
+    section: 'json',
+  }));
+
+  const errorItems = activeEnvironment.value.validation.errors.map((item, index) => ({
+    id: `error-${index}-${item.path}`,
+    level: 'error',
+    title: item.path || '配置错误',
+    detail: item.message,
+    section: resolveSectionFromPath(item.path),
+  }));
+
+  const warningItems = activeEnvironment.value.validation.warnings.map((item, index) => ({
+    id: `warning-${index}-${item.path}`,
+    level: 'warning',
+    title: item.path || '配置警告',
+    detail: item.message,
+    section: resolveSectionFromPath(item.path),
+  }));
+
+  return [...parseItems, ...errorItems, ...warningItems];
+});
+
+const nextStep = computed(() => {
+  if (activeEnvironment.value.parseErrors.length) {
+    return {
+      section: 'json',
+      tone: 'danger',
+      title: '先修复 JSON 解析错误',
+      description: `当前有 ${activeEnvironment.value.parseErrors.length} 处解析错误，修复后再继续编辑。`,
+      actionLabel: '前往 JSON',
+    };
+  }
+
+  if (activeEnvironment.value.validation.errors.length) {
+    const firstErrorPath = activeEnvironment.value.validation.errors[0]?.path || '';
+    return {
+      section: resolveSectionFromPath(firstErrorPath),
+      tone: 'danger',
+      title: '优先处理阻止应用的错误',
+      description: `首个错误位于 ${firstErrorPath || '当前配置'}，建议先修复这一项。`,
+      actionLabel: '前往处理',
+    };
+  }
+
+  if (activeEnvironment.value.isDirty) {
+    return {
+      section: activeEnvironment.value.validation.warnings.length ? 'overview' : 'overview',
+      tone: activeEnvironment.value.validation.warnings.length ? 'warning' : 'success',
+      title: activeEnvironment.value.validation.warnings.length ? '草稿可用，但建议先复核警告' : '草稿已准备好，可以直接写回文件',
+      description: activeEnvironment.value.validation.warnings.length
+        ? `当前草稿有 ${activeEnvironment.value.validation.warnings.length} 个警告。`
+        : '当前草稿没有错误，可以直接应用到配置文件。',
+      actionLabel: '查看概览',
+    };
+  }
+
+  return {
+    section: 'providers',
+    tone: 'neutral',
+    title: '从核心配置开始维护',
+    description: '建议优先检查 Provider、默认模型和权限规则，保持主链路可用。',
+    actionLabel: '前往核心配置',
+  };
+});
+
 function notify(message: string, type: 'success' | 'warning' | 'error' | 'info' = 'info') {
   ElMessage({ message, type, plain: true });
   window.utools?.showNotification(message);
@@ -353,6 +444,38 @@ async function addEnvironment() {
   store.createEnvironment(value);
 }
 
+function startEnvironmentRename(environmentId: string, currentName: string, targetArea: 'sidebar' | 'header' = 'sidebar') {
+  editingEnvironmentId.value = environmentId;
+  editingEnvironmentName.value = currentName;
+
+  nextTick(() => {
+    const selector = targetArea === 'header'
+      ? `[data-environment-header-input="${environmentId}"] input`
+      : `[data-environment-input="${environmentId}"] input`;
+    const target = document.querySelector<HTMLInputElement>(selector)
+      || document.querySelector<HTMLInputElement>(`[data-environment-header-input="${environmentId}"] input`)
+      || document.querySelector<HTMLInputElement>(`[data-environment-input="${environmentId}"] input`);
+    target?.focus();
+    target?.select();
+  });
+}
+
+function commitEnvironmentRename(environmentId: string, fallbackName: string) {
+  if (editingEnvironmentId.value !== environmentId) {
+    return;
+  }
+
+  const nextName = normalizeEnvironmentName(editingEnvironmentName.value, fallbackName);
+  store.renameEnvironment(environmentId, nextName);
+  editingEnvironmentId.value = '';
+  editingEnvironmentName.value = '';
+}
+
+function cancelEnvironmentRename() {
+  editingEnvironmentId.value = '';
+  editingEnvironmentName.value = '';
+}
+
 async function removeEnvironment() {
   if (store.environments.length === 1) {
     notify('至少保留一个环境草稿', 'warning');
@@ -434,6 +557,14 @@ function resetJson() {
   store.resetJsonFromDraft();
   notify('JSON 已从草稿重置');
 }
+
+function jumpToIssue(section: string) {
+  store.selectedSection = section;
+}
+
+function jumpToNextStep() {
+  store.selectedSection = nextStep.value.section;
+}
 </script>
 
 <template>
@@ -445,14 +576,45 @@ function resetJson() {
             <span>环境草稿</span>
             <el-button text @click="addEnvironment">新增</el-button>
           </div>
-          <button v-for="item in store.environments" :key="item.id" class="sidebar-pill" :class="{ active: item.id === store.activeEnvironmentId }" @click="store.setActiveEnvironment(item.id)">
-            <span>{{ item.name }}</span>
-            <small>{{ item.isDirty ? '未应用' : '同步' }}</small>
+          <button
+            v-for="item in store.environments"
+            :key="item.id"
+            class="sidebar-pill environment-pill"
+            :class="{
+              active: item.id === store.activeEnvironmentId && editingEnvironmentId !== item.id,
+              editing: editingEnvironmentId === item.id,
+            }"
+            @click="store.setActiveEnvironment(item.id)"
+          >
+            <el-input
+              v-if="editingEnvironmentId === item.id"
+              :data-environment-input="item.id"
+              v-model="editingEnvironmentName"
+              class="environment-inline-input"
+              size="small"
+              @blur="commitEnvironmentRename(item.id, item.name)"
+              @click.stop
+              @keydown.enter.prevent="commitEnvironmentRename(item.id, item.name)"
+              @keydown.esc.prevent="cancelEnvironmentRename"
+            />
+            <span v-else @dblclick.stop="startEnvironmentRename(item.id, item.name)">{{ item.name }}</span>
+            <div class="environment-pill-meta">
+              <small>{{ item.isDirty ? '未应用' : '同步' }}</small>
+              <div class="environment-pill-actions" @click.stop>
+                <el-button text size="small" class="environment-inline-button" @click="store.cloneActiveEnvironment">复制</el-button>
+                <el-button
+                  text
+                  size="small"
+                  class="environment-inline-button"
+                  type="danger"
+                  :disabled="store.environments.length === 1"
+                  @click="removeEnvironment"
+                >
+                  删除
+                </el-button>
+              </div>
+            </div>
           </button>
-          <div class="sidebar-actions">
-            <el-button plain size="small" @click="store.cloneActiveEnvironment">复制</el-button>
-            <el-button plain size="small" type="danger" @click="removeEnvironment">删除</el-button>
-          </div>
         </div>
 
         <div class="sidebar-block">
@@ -466,22 +628,53 @@ function resetJson() {
 
     <main class="workspace-main">
       <header class="workspace-header">
-        <div>
-          <h2>{{ activeEnvironment.name }}</h2>
-          <p>Global config only. 最终生效结果仍可能被 project config、`OPENCODE_CONFIG` 或 remote config 覆盖。</p>
+        <div class="header-title-block">
+          <div class="header-title-row">
+            <el-input
+              v-if="isEditingActiveEnvironment"
+              :data-environment-header-input="activeEnvironment.id"
+              v-model="editingEnvironmentName"
+              class="header-environment-input"
+              size="large"
+              @blur="commitEnvironmentRename(activeEnvironment.id, activeEnvironment.name)"
+              @keydown.enter.prevent="commitEnvironmentRename(activeEnvironment.id, activeEnvironment.name)"
+              @keydown.esc.prevent="cancelEnvironmentRename"
+            />
+            <h2 v-else>{{ activeEnvironment.name }}</h2>
+            <button
+              v-if="!isEditingActiveEnvironment"
+              type="button"
+              class="header-edit-button"
+              aria-label="编辑环境名称"
+              @click="startEnvironmentRename(activeEnvironment.id, activeEnvironment.name, 'header')"
+            >
+              <span class="header-edit-icon" aria-hidden="true">
+                <svg viewBox="0 0 16 16" fill="none">
+                  <path d="M3 11.75V13h1.25l7.1-7.1-1.25-1.25L3 11.75Z" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.2"/>
+                  <path d="M9.9 3.4 11.15 2.15a.9.9 0 0 1 1.27 0l1.43 1.43a.9.9 0 0 1 0 1.27L12.6 6.1" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.2"/>
+                </svg>
+              </span>
+            </button>
+          </div>
+          <p> 最终生效结果仍可能被 project config、`OPENCODE_CONFIG` 或 remote config 覆盖。</p>
         </div>
         <div class="header-actions">
-          <el-input v-model="activeEnvironment.sourcePath" class="path-input" placeholder="配置文件路径" />
           <div class="header-action-cluster">
-            <div class="secondary-actions">
-              <el-button plain class="header-tool-button" @click="reloadConfig">重新加载</el-button>
-              <el-button plain class="header-tool-button" @click="validateConfig">验证</el-button>
-              <el-button plain class="header-tool-button" @click="store.selectedSection = 'json'">查看 JSON</el-button>
-            </div>
-            <el-button type="primary" class="header-primary-button" @click="applyConfig">应用到文件</el-button>
+            <el-button type="primary" class="header-primary-button" @click="applyConfig">应用到配置</el-button>
           </div>
         </div>
       </header>
+
+      <section class="next-step-banner" :class="nextStep.tone">
+        <div class="next-step-copy">
+          <span class="next-step-kicker">推荐下一步</span>
+          <strong>{{ nextStep.title }}</strong>
+          <p>{{ nextStep.description }}</p>
+        </div>
+        <el-button plain class="next-step-button" @click="jumpToNextStep">
+          {{ nextStep.actionLabel }}
+        </el-button>
+      </section>
 
       <section v-if="store.selectedSection === 'overview'" class="section-grid">
         <el-card class="hero-card" shadow="never">
@@ -529,127 +722,161 @@ function resetJson() {
               <div class="hero-metric"><span>MCP</span><strong>{{ mcpEntries.length }}</strong></div>
             </div>
           </div>
+          <div class="overview-issues">
+            <div class="card-toolbar compact-toolbar">
+              <span>问题定位</span>
+              <small v-if="issueItems.length">显示前 {{ Math.min(issueItems.length, 4) }} 项</small>
+            </div>
+            <div v-if="issueItems.length" class="issue-list">
+              <div v-for="item in issueItems.slice(0, 4)" :key="item.id" class="issue-item" :class="item.level">
+                <div class="issue-copy">
+                  <strong>{{ item.title }}</strong>
+                  <span>{{ item.detail }}</span>
+                </div>
+                <el-button plain size="small" class="issue-action" @click="jumpToIssue(item.section)">
+                  前往处理
+                </el-button>
+              </div>
+            </div>
+            <div v-else class="feedback-row subtle-row">
+              <strong>状态</strong>
+              <span>当前没有待处理的问题。</span>
+            </div>
+          </div>
         </el-card>
       </section>
 
-      <section v-else-if="store.selectedSection === 'providers'" class="section-grid columns-2">
-        <el-card shadow="never">
-          <template #header>
-            <div class="card-toolbar"><span>Provider 列表</span><el-button text @click="addProvider">新增</el-button></div>
-          </template>
-          <button v-for="[providerId, providerValue] in providerEntries" :key="providerId" class="select-pill" :class="{ active: providerId === store.selectedProviderId }" @click="store.setSelectedProvider(providerId)">
-            <strong>{{ providerId }}</strong>
-            <small>{{ Object.keys(providerValue.models || {}).length }} models</small>
-          </button>
-        </el-card>
-
+      <section v-else-if="store.selectedSection === 'providers'" class="section-grid">
         <el-card shadow="never">
           <template #header>
             <div class="card-toolbar">
-              <span>{{ store.selectedProviderId || '未选择 Provider' }}</span>
-              <div class="toolbar-actions">
-                <el-button plain :disabled="!store.selectedProviderId" @click="checkProvider">检测</el-button>
-                <el-button plain type="danger" :disabled="!store.selectedProviderId" @click="removeProvider">删除</el-button>
-              </div>
+              <span>全局模型选择</span>
+              <small>默认模型与轻量模型独立于 Provider 配置，统一从全部模型中选择。</small>
             </div>
           </template>
-
-          <template v-if="selectedProvider">
-            <div class="form-grid">
-              <label class="field">
-                <span>默认模型</span>
-                <el-select v-model="draft.model" filterable allow-create default-first-option>
-                  <el-option v-for="item in modelOptions" :key="item.value" :label="item.label" :value="item.value" />
-                </el-select>
-              </label>
-              <label class="field">
-                <span>轻量模型</span>
-                <el-select v-model="draft.small_model" filterable allow-create default-first-option>
-                  <el-option v-for="item in modelOptions" :key="item.value" :label="item.label" :value="item.value" />
-                </el-select>
-              </label>
-              <label class="field compact-switch">
-                <span>禁用 Provider</span>
-                <el-switch :model-value="(draft.disabled_providers || []).includes(store.selectedProviderId)" @update:model-value="(value) => toggleProviderDisabled(store.selectedProviderId, value)" />
-              </label>
-            </div>
-
-            <el-collapse v-model="providerPanels" class="runtime-collapse">
-              <el-collapse-item name="provider-core" title="Provider 核心字段">
-                <div class="form-grid two-columns-compact">
-                  <label class="field">
-                    <span>API Key</span>
-                    <el-input v-model="providerApiKey" type="password" show-password placeholder="{env:OPENAI_API_KEY}" />
-                  </label>
-                  <label class="field">
-                    <span>Base URL</span>
-                    <el-input v-model="providerBaseURL" placeholder="https://api.openai.com/v1" />
-                  </label>
-                  <label class="field">
-                    <span>Timeout</span>
-                    <el-input-number v-model="providerTimeout" :min="1000" :step="1000" />
-                  </label>
-                  <label class="field">
-                    <span>Chunk Timeout</span>
-                    <el-input-number v-model="providerChunkTimeout" :min="1000" :step="1000" />
-                  </label>
-                  <label class="field compact-switch">
-                    <span>Set Cache Key</span>
-                    <el-switch v-model="providerSetCacheKey" />
-                  </label>
-                </div>
-              </el-collapse-item>
-              <el-collapse-item name="provider-advanced" title="Provider 高级选项">
-                <KeyValueEditor v-model="selectedProviderOptions" />
-              </el-collapse-item>
-            </el-collapse>
-
-            <div class="card-toolbar sub-toolbar">
-              <h4 class="block-title">Models</h4>
-              <div class="toolbar-actions">
-                <el-button plain size="small" @click="addModel">新增 Model</el-button>
-                <el-button plain size="small" type="danger" :disabled="!store.selectedModelId" @click="removeModel">删除</el-button>
-              </div>
-            </div>
-
-            <div class="columns-2 nested-grid">
-              <div>
-                <button v-for="modelId in Object.keys(selectedProvider.models || {})" :key="modelId" class="select-pill" :class="{ active: modelId === store.selectedModelId }" @click="store.setSelectedModel(modelId)">
-                  <strong>{{ modelId }}</strong>
-                  <small>{{ `${store.selectedProviderId}/${modelId}` === draft.model || `${store.selectedProviderId}/${modelId}` === draft.small_model ? '已引用' : '未引用' }}</small>
-                </button>
-              </div>
-              <div v-if="selectedModel">
-                <el-collapse v-model="providerPanels" class="runtime-collapse">
-                  <el-collapse-item name="model-core" title="Model 核心字段">
-                    <div class="form-grid three-columns">
-                      <label class="field">
-                        <span>Reasoning Effort</span>
-                        <el-input v-model="modelReasoningEffort" placeholder="low / medium / high" />
-                      </label>
-                      <label class="field">
-                        <span>Text Verbosity</span>
-                        <el-input v-model="modelTextVerbosity" placeholder="low / medium / high" />
-                      </label>
-                      <label class="field">
-                        <span>Reasoning Summary</span>
-                        <el-input v-model="modelReasoningSummary" placeholder="auto / detailed" />
-                      </label>
-                    </div>
-                  </el-collapse-item>
-                  <el-collapse-item name="model-advanced" title="Model 高级选项">
-                    <KeyValueEditor v-model="selectedModelOptions" />
-                  </el-collapse-item>
-                  <el-collapse-item name="model-variants" title="Variants">
-                    <KeyValueEditor v-model="selectedModelVariants" />
-                  </el-collapse-item>
-                </el-collapse>
-              </div>
-            </div>
-          </template>
-
-          <el-empty v-else description="先新增一个 Provider" />
+          <div class="form-grid two-columns-compact">
+            <label class="field">
+              <span>默认模型</span>
+              <el-select v-model="draft.model" filterable allow-create default-first-option>
+                <el-option v-for="item in modelOptions" :key="item.value" :label="item.label" :value="item.value" />
+              </el-select>
+            </label>
+            <label class="field">
+              <span>轻量模型</span>
+              <el-select v-model="draft.small_model" filterable allow-create default-first-option>
+                <el-option v-for="item in modelOptions" :key="item.value" :label="item.label" :value="item.value" />
+              </el-select>
+            </label>
+          </div>
         </el-card>
+
+        <div class="columns-2 provider-page-grid">
+          <el-card shadow="never">
+            <template #header>
+              <div class="card-toolbar"><span>Provider 列表</span><el-button text @click="addProvider">新增</el-button></div>
+            </template>
+            <button v-for="[providerId, providerValue] in providerEntries" :key="providerId" class="select-pill" :class="{ active: providerId === store.selectedProviderId }" @click="store.setSelectedProvider(providerId)">
+              <strong>{{ providerId }}</strong>
+              <small>{{ Object.keys(providerValue.models || {}).length }} models</small>
+            </button>
+          </el-card>
+
+          <el-card shadow="never">
+            <template #header>
+              <div class="card-toolbar">
+                <span>{{ store.selectedProviderId || '未选择 Provider' }}</span>
+                <div class="toolbar-actions">
+                  <el-button plain :disabled="!store.selectedProviderId" @click="checkProvider">检测</el-button>
+                  <el-button plain type="danger" :disabled="!store.selectedProviderId" @click="removeProvider">删除</el-button>
+                </div>
+              </div>
+            </template>
+
+            <template v-if="selectedProvider">
+              <div class="form-grid">
+                <label class="field compact-switch">
+                  <span>禁用 Provider</span>
+                  <el-switch :model-value="(draft.disabled_providers || []).includes(store.selectedProviderId)" @update:model-value="(value) => toggleProviderDisabled(store.selectedProviderId, value)" />
+                </label>
+              </div>
+
+              <el-collapse v-model="providerPanels" class="runtime-collapse">
+                <el-collapse-item name="provider-core" title="Provider 核心字段">
+                  <div class="form-grid two-columns-compact">
+                    <label class="field">
+                      <span>API Key</span>
+                      <el-input v-model="providerApiKey" type="password" show-password placeholder="{env:OPENAI_API_KEY}" />
+                    </label>
+                    <label class="field">
+                      <span>Base URL</span>
+                      <el-input v-model="providerBaseURL" placeholder="https://api.openai.com/v1" />
+                    </label>
+                    <label class="field">
+                      <span>Timeout</span>
+                      <el-input-number v-model="providerTimeout" :min="1000" :step="1000" />
+                    </label>
+                    <label class="field">
+                      <span>Chunk Timeout</span>
+                      <el-input-number v-model="providerChunkTimeout" :min="1000" :step="1000" />
+                    </label>
+                    <label class="field compact-switch">
+                      <span>Set Cache Key</span>
+                      <el-switch v-model="providerSetCacheKey" />
+                    </label>
+                  </div>
+                </el-collapse-item>
+                <el-collapse-item name="provider-advanced" title="Provider 高级选项">
+                  <KeyValueEditor v-model="selectedProviderOptions" />
+                </el-collapse-item>
+              </el-collapse>
+
+              <div class="card-toolbar sub-toolbar">
+                <h4 class="block-title">Models</h4>
+                <div class="toolbar-actions">
+                  <el-button plain size="small" @click="addModel">新增 Model</el-button>
+                  <el-button plain size="small" type="danger" :disabled="!store.selectedModelId" @click="removeModel">删除</el-button>
+                </div>
+              </div>
+
+              <div class="columns-2 nested-grid">
+                <div>
+                  <button v-for="modelId in Object.keys(selectedProvider.models || {})" :key="modelId" class="select-pill" :class="{ active: modelId === store.selectedModelId }" @click="store.setSelectedModel(modelId)">
+                    <strong>{{ modelId }}</strong>
+                    <small>{{ `${store.selectedProviderId}/${modelId}` === draft.model || `${store.selectedProviderId}/${modelId}` === draft.small_model ? '已引用' : '未引用' }}</small>
+                  </button>
+                </div>
+                <div v-if="selectedModel">
+                  <el-collapse v-model="providerPanels" class="runtime-collapse">
+                    <el-collapse-item name="model-core" title="Model 核心字段">
+                      <div class="form-grid three-columns">
+                        <label class="field">
+                          <span>Reasoning Effort</span>
+                          <el-input v-model="modelReasoningEffort" placeholder="low / medium / high" />
+                        </label>
+                        <label class="field">
+                          <span>Text Verbosity</span>
+                          <el-input v-model="modelTextVerbosity" placeholder="low / medium / high" />
+                        </label>
+                        <label class="field">
+                          <span>Reasoning Summary</span>
+                          <el-input v-model="modelReasoningSummary" placeholder="auto / detailed" />
+                        </label>
+                      </div>
+                    </el-collapse-item>
+                    <el-collapse-item name="model-advanced" title="Model 高级选项">
+                      <KeyValueEditor v-model="selectedModelOptions" />
+                    </el-collapse-item>
+                    <el-collapse-item name="model-variants" title="Variants">
+                      <KeyValueEditor v-model="selectedModelVariants" />
+                    </el-collapse-item>
+                  </el-collapse>
+                </div>
+              </div>
+            </template>
+
+            <el-empty v-else description="先新增一个 Provider" />
+          </el-card>
+        </div>
       </section>
 
       <section v-else-if="store.selectedSection === 'permissions'" class="section-grid">
@@ -670,32 +897,30 @@ function resetJson() {
           </div>
 
           <div v-else class="permission-stack">
-            <label class="field">
-              <span>默认动作 `*`</span>
-              <el-radio-group :model-value="permissionRows.defaultAction" @update:model-value="(value) => { const normalized = normalizePermission(draft.permission); normalized['*'] = value; draft.permission = normalized; }">
-                <el-radio-button value="allow">allow</el-radio-button>
-                <el-radio-button value="ask">ask</el-radio-button>
-                <el-radio-button value="deny">deny</el-radio-button>
-              </el-radio-group>
-            </label>
-
-            <div v-for="scope in ['global', 'bash', 'edit']" :key="scope" class="rule-group">
-              <div class="card-toolbar">
-                <strong>{{ scope === 'global' ? 'Global Rules' : `${scope} Rules` }}</strong>
-                <el-button text @click="addPermissionRow(scope)">新增规则</el-button>
-              </div>
-              <div v-for="(row, index) in permissionRows[scope]" :key="`${scope}-${index}-${row.pattern}`" class="rule-row">
-                <el-input :model-value="row.pattern" @update:model-value="(value) => mutatePermissionRow(scope, index, 'pattern', value)" />
-                <el-select :model-value="row.action" @update:model-value="(value) => mutatePermissionRow(scope, index, 'action', value)">
-                  <el-option label="allow" value="allow" />
-                  <el-option label="ask" value="ask" />
-                  <el-option label="deny" value="deny" />
-                </el-select>
-                <el-button text @click="movePermissionRow(scope, index, -1)">上移</el-button>
-                <el-button text @click="movePermissionRow(scope, index, 1)">下移</el-button>
-                <el-button text type="danger" @click="removePermissionRow(scope, index)">删除</el-button>
-              </div>
-            </div>
+            <el-collapse v-model="permissionPanels" class="runtime-collapse">
+              <el-collapse-item
+                v-for="scope in ['global', 'bash', 'edit']"
+                :key="scope"
+                :name="scope"
+                :title="scope === 'global' ? 'Global Rules' : `${scope} Rules`"
+              >
+                <div class="card-toolbar compact-toolbar collapse-toolbar">
+                  <span>{{ scope === 'global' ? '规则列表' : `${scope} 规则列表` }}</span>
+                  <el-button text @click="addPermissionRow(scope)">新增规则</el-button>
+                </div>
+                <div v-for="(row, index) in permissionRows[scope]" :key="`${scope}-${index}-${row.pattern}`" class="rule-row">
+                  <el-input :model-value="row.pattern" @update:model-value="(value) => mutatePermissionRow(scope, index, 'pattern', value)" />
+                  <el-select :model-value="row.action" @update:model-value="(value) => mutatePermissionRow(scope, index, 'action', value)">
+                    <el-option label="allow" value="allow" />
+                    <el-option label="ask" value="ask" />
+                    <el-option label="deny" value="deny" />
+                  </el-select>
+                  <el-button text @click="movePermissionRow(scope, index, -1)">上移</el-button>
+                  <el-button text @click="movePermissionRow(scope, index, 1)">下移</el-button>
+                  <el-button text type="danger" @click="removePermissionRow(scope, index)">删除</el-button>
+                </div>
+              </el-collapse-item>
+            </el-collapse>
           </div>
         </el-card>
       </section>

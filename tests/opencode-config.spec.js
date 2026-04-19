@@ -4,10 +4,12 @@ import assert from 'node:assert/strict';
 import {
   collectConfigReferences,
   createEmptyDraftConfig,
+  getModelOptions,
   parseConfigText,
   stringifyConfig,
   validateDraftConfig,
 } from '../src/lib/opencode-config.js';
+import { normalizeEnvironmentName } from '../src/lib/environment-name.js';
 import { normalizePreferencesForStorage } from '../src/lib/config-manager-preferences.js';
 
 test('parses jsonc config text with comments and trailing commas', () => {
@@ -108,4 +110,32 @@ test('normalizes preferences into a cloneable plain object', () => {
     testTimeout: 5000,
   });
   assert.doesNotThrow(() => structuredClone(normalized));
+});
+
+test('normalizes environment names for inline rename commit', () => {
+  assert.equal(normalizeEnvironmentName('  Daily Profile  ', 'Fallback'), 'Daily Profile');
+  assert.equal(normalizeEnvironmentName('   ', 'Fallback'), 'Fallback');
+  assert.equal(normalizeEnvironmentName('', 'Global Draft'), 'Global Draft');
+});
+
+test('returns model options across all providers for global model selection', () => {
+  const options = getModelOptions({
+    openai: {
+      models: {
+        'gpt-5': {},
+        'gpt-5-mini': {},
+      },
+    },
+    anthropic: {
+      models: {
+        'claude-sonnet-4': {},
+      },
+    },
+  });
+
+  assert.deepEqual(options, [
+    { label: 'openai/gpt-5', value: 'openai/gpt-5' },
+    { label: 'openai/gpt-5-mini', value: 'openai/gpt-5-mini' },
+    { label: 'anthropic/claude-sonnet-4', value: 'anthropic/claude-sonnet-4' },
+  ]);
 });

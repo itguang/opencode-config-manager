@@ -80,6 +80,15 @@ function normalizeProviderMap(providerMap) {
   );
 }
 
+export function getModelOptions(providerMap) {
+  return Object.entries(normalizeProviderMap(providerMap)).flatMap(([providerId, providerValue]) =>
+    Object.keys(providerValue.models || {}).map((modelId) => ({
+      label: `${providerId}/${modelId}`,
+      value: `${providerId}/${modelId}`,
+    })),
+  );
+}
+
 function validateModelReference(reference, providerMap, path, errors) {
   if (!reference) {
     return;
