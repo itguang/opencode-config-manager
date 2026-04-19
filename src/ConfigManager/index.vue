@@ -9,6 +9,8 @@ import { useConfigManagerStore } from '../stores/config-manager.js';
 const store = useConfigManagerStore();
 const permissionMode = ref<'simple' | 'advanced'>('simple');
 const runtimePanels = ref(['plugins', 'instructions']);
+const providerPanels = ref(['provider-core', 'model-core']);
+const mcpPanels = ref(['mcp-core']);
 
 const sections = [
   { id: 'overview', label: '概览' },
@@ -85,6 +87,110 @@ const serverSettings = computed({
   get: () => draft.value.server || {},
   set: (value) => {
     draft.value.server = value;
+  },
+});
+
+const providerApiKey = computed({
+  get: () => String(selectedProvider.value?.options?.apiKey || ''),
+  set: (value) => {
+    if (!selectedProvider.value) return;
+    selectedProvider.value.options = {
+      ...selectedProvider.value.options,
+      apiKey: value,
+    };
+  },
+});
+
+const providerBaseURL = computed({
+  get: () => String(selectedProvider.value?.options?.baseURL || ''),
+  set: (value) => {
+    if (!selectedProvider.value) return;
+    selectedProvider.value.options = {
+      ...selectedProvider.value.options,
+      baseURL: value,
+    };
+  },
+});
+
+const providerTimeout = computed({
+  get: () => Number(selectedProvider.value?.options?.timeout || 5000),
+  set: (value) => {
+    if (!selectedProvider.value) return;
+    selectedProvider.value.options = {
+      ...selectedProvider.value.options,
+      timeout: value,
+    };
+  },
+});
+
+const providerChunkTimeout = computed({
+  get: () => Number(selectedProvider.value?.options?.chunkTimeout || 5000),
+  set: (value) => {
+    if (!selectedProvider.value) return;
+    selectedProvider.value.options = {
+      ...selectedProvider.value.options,
+      chunkTimeout: value,
+    };
+  },
+});
+
+const providerSetCacheKey = computed({
+  get: () => Boolean(selectedProvider.value?.options?.setCacheKey),
+  set: (value) => {
+    if (!selectedProvider.value) return;
+    selectedProvider.value.options = {
+      ...selectedProvider.value.options,
+      setCacheKey: value,
+    };
+  },
+});
+
+const modelReasoningEffort = computed({
+  get: () => String(selectedModel.value?.options?.reasoningEffort || ''),
+  set: (value) => {
+    if (!selectedModel.value) return;
+    selectedModel.value.options = {
+      ...selectedModel.value.options,
+      reasoningEffort: value,
+    };
+  },
+});
+
+const modelTextVerbosity = computed({
+  get: () => String(selectedModel.value?.options?.textVerbosity || ''),
+  set: (value) => {
+    if (!selectedModel.value) return;
+    selectedModel.value.options = {
+      ...selectedModel.value.options,
+      textVerbosity: value,
+    };
+  },
+});
+
+const modelReasoningSummary = computed({
+  get: () => String(selectedModel.value?.options?.reasoningSummary || ''),
+  set: (value) => {
+    if (!selectedModel.value) return;
+    selectedModel.value.options = {
+      ...selectedModel.value.options,
+      reasoningSummary: value,
+    };
+  },
+});
+
+const remoteMcpUrl = computed({
+  get: () => String(selectedMcp.value?.url || ''),
+  set: (value) => {
+    if (!selectedMcp.value) return;
+    selectedMcp.value.url = value;
+  },
+});
+
+const localMcpTimeout = computed({
+  get: () => Number(selectedMcp.value?.timeout || store.settings.testTimeout),
+  set: (value) => {
+    if (!selectedMcp.value) return;
+    selectedMcp.value.timeout = value;
   },
 });
 
@@ -468,8 +574,35 @@ function resetJson() {
               </label>
             </div>
 
-            <h4 class="block-title">Provider Options</h4>
-            <KeyValueEditor v-model="selectedProviderOptions" />
+            <el-collapse v-model="providerPanels" class="runtime-collapse">
+              <el-collapse-item name="provider-core" title="Provider 核心字段">
+                <div class="form-grid two-columns-compact">
+                  <label class="field">
+                    <span>API Key</span>
+                    <el-input v-model="providerApiKey" type="password" show-password placeholder="{env:OPENAI_API_KEY}" />
+                  </label>
+                  <label class="field">
+                    <span>Base URL</span>
+                    <el-input v-model="providerBaseURL" placeholder="https://api.openai.com/v1" />
+                  </label>
+                  <label class="field">
+                    <span>Timeout</span>
+                    <el-input-number v-model="providerTimeout" :min="1000" :step="1000" />
+                  </label>
+                  <label class="field">
+                    <span>Chunk Timeout</span>
+                    <el-input-number v-model="providerChunkTimeout" :min="1000" :step="1000" />
+                  </label>
+                  <label class="field compact-switch">
+                    <span>Set Cache Key</span>
+                    <el-switch v-model="providerSetCacheKey" />
+                  </label>
+                </div>
+              </el-collapse-item>
+              <el-collapse-item name="provider-advanced" title="Provider 高级选项">
+                <KeyValueEditor v-model="selectedProviderOptions" />
+              </el-collapse-item>
+            </el-collapse>
 
             <div class="card-toolbar sub-toolbar">
               <h4 class="block-title">Models</h4>
@@ -487,10 +620,30 @@ function resetJson() {
                 </button>
               </div>
               <div v-if="selectedModel">
-                <h4 class="block-title">Model Options</h4>
-                <KeyValueEditor v-model="selectedModelOptions" />
-                <h4 class="block-title">Variants</h4>
-                <KeyValueEditor v-model="selectedModelVariants" />
+                <el-collapse v-model="providerPanels" class="runtime-collapse">
+                  <el-collapse-item name="model-core" title="Model 核心字段">
+                    <div class="form-grid three-columns">
+                      <label class="field">
+                        <span>Reasoning Effort</span>
+                        <el-input v-model="modelReasoningEffort" placeholder="low / medium / high" />
+                      </label>
+                      <label class="field">
+                        <span>Text Verbosity</span>
+                        <el-input v-model="modelTextVerbosity" placeholder="low / medium / high" />
+                      </label>
+                      <label class="field">
+                        <span>Reasoning Summary</span>
+                        <el-input v-model="modelReasoningSummary" placeholder="auto / detailed" />
+                      </label>
+                    </div>
+                  </el-collapse-item>
+                  <el-collapse-item name="model-advanced" title="Model 高级选项">
+                    <KeyValueEditor v-model="selectedModelOptions" />
+                  </el-collapse-item>
+                  <el-collapse-item name="model-variants" title="Variants">
+                    <KeyValueEditor v-model="selectedModelVariants" />
+                  </el-collapse-item>
+                </el-collapse>
               </div>
             </div>
           </template>
@@ -568,7 +721,7 @@ function resetJson() {
           </template>
 
           <template v-if="selectedMcp">
-            <div class="form-grid">
+            <div class="form-grid two-columns-compact">
               <label class="field">
                 <span>类型</span>
                 <el-select v-model="selectedMcp.type">
@@ -580,27 +733,44 @@ function resetJson() {
                 <span>启用</span>
                 <el-switch v-model="selectedMcp.enabled" />
               </label>
-              <label class="field">
-                <span>超时</span>
-                <el-input-number v-model="selectedMcp.timeout" :min="1000" :step="1000" />
-              </label>
             </div>
 
-            <template v-if="selectedMcp.type === 'remote'">
-              <label class="field">
-                <span>URL</span>
-                <el-input v-model="selectedMcp.url" placeholder="https://mcp.example.com/sse" />
-              </label>
-              <h4 class="block-title">Headers</h4>
-              <KeyValueEditor v-model="selectedMcpHeaders" />
-            </template>
+            <el-collapse v-model="mcpPanels" class="runtime-collapse">
+              <el-collapse-item name="mcp-core" title="MCP 核心字段">
+                <template v-if="selectedMcp.type === 'remote'">
+                  <label class="field">
+                    <span>URL</span>
+                    <el-input v-model="remoteMcpUrl" placeholder="https://mcp.example.com/sse" />
+                  </label>
+                </template>
 
-            <template v-else>
-              <h4 class="block-title">Command</h4>
-              <StringListEditor v-model="selectedMcp.command" add-label="新增命令片段" placeholder="例如：npx" />
-              <h4 class="block-title">Environment</h4>
-              <KeyValueEditor v-model="selectedMcpEnvironment" />
-            </template>
+                <template v-else>
+                  <h4 class="block-title compact-title">Command</h4>
+                  <StringListEditor v-model="selectedMcp.command" add-label="新增命令片段" placeholder="例如：npx" />
+                </template>
+              </el-collapse-item>
+
+              <el-collapse-item v-if="selectedMcp.type === 'remote'" name="mcp-headers" title="Remote Headers">
+                <KeyValueEditor v-model="selectedMcpHeaders" />
+              </el-collapse-item>
+
+              <el-collapse-item v-else name="mcp-environment" title="Local Environment">
+                <KeyValueEditor v-model="selectedMcpEnvironment" />
+              </el-collapse-item>
+
+              <el-collapse-item name="mcp-advanced" title="高级字段">
+                <div class="form-grid two-columns-compact">
+                  <label class="field">
+                    <span>Timeout</span>
+                    <el-input-number v-model="localMcpTimeout" :min="1000" :step="1000" />
+                  </label>
+                  <label class="field compact-switch">
+                    <span>启用</span>
+                    <el-switch v-model="selectedMcp.enabled" />
+                  </label>
+                </div>
+              </el-collapse-item>
+            </el-collapse>
           </template>
 
           <el-empty v-else description="先新增一个 MCP" />

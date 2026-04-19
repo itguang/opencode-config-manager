@@ -374,6 +374,14 @@ small {
   gap: 14px;
 }
 
+.two-columns-compact {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.compact-title {
+  margin-top: 0;
+}
+
 .section-grid {
   align-content: start;
 }
