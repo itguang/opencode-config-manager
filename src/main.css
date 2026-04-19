@@ -386,6 +386,67 @@ small {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
+.overview-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 260px;
+  gap: 14px;
+}
+
+.overview-hero-main {
+  position: relative;
+  padding: 18px 20px;
+  border: 1px solid rgba(25, 42, 70, 0.08);
+  border-radius: 22px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(246, 249, 253, 0.78));
+  overflow: hidden;
+}
+
+.overview-hero-main::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 5px;
+  background: linear-gradient(180deg, rgba(31, 94, 255, 0.9), rgba(117, 166, 255, 0.9));
+}
+
+.overview-hero-main.warning::before {
+  background: linear-gradient(180deg, rgba(212, 139, 21, 0.95), rgba(241, 182, 74, 0.9));
+}
+
+.overview-hero-main.danger::before {
+  background: linear-gradient(180deg, rgba(196, 67, 67, 0.95), rgba(232, 116, 116, 0.9));
+}
+
+.overview-kicker {
+  display: inline-flex;
+  margin-bottom: 10px;
+  color: #5d6c84;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.overview-hero-main h3 {
+  margin: 0;
+  font-size: 24px;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+}
+
+.overview-hero-main p {
+  margin: 10px 0 0;
+  max-width: 620px;
+  color: #5b6b83;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.overview-hero-side {
+  display: grid;
+  gap: 10px;
+}
+
 .overview-meta {
   display: grid;
   grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
@@ -500,6 +561,14 @@ small {
   background: rgba(212, 139, 21, 0.14);
 }
 
+.status-value.neutral {
+  color: #4f6079;
+  background: rgba(96, 112, 137, 0.12);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
 .subtle-row {
   background: rgba(255, 255, 255, 0.42);
   border-color: rgba(25, 42, 70, 0.05);
@@ -514,6 +583,10 @@ small {
 
 .subtle-row span {
   color: #4d5e78;
+}
+
+.compact-hero-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .field {
@@ -786,6 +859,7 @@ small {
 }
 
 @media (max-width: 1480px) {
+  .overview-hero,
   .overview-meta {
     grid-template-columns: 1fr;
   }

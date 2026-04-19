@@ -88,6 +88,30 @@ const serverSettings = computed({
   },
 });
 
+const overviewStatus = computed(() => {
+  if (activeEnvironment.value.validation.errors.length) {
+    return {
+      tone: 'danger',
+      title: '当前配置存在阻止应用的问题',
+      description: `发现 ${activeEnvironment.value.validation.errors.length} 个错误，建议先修复再写回文件。`,
+    };
+  }
+
+  if (activeEnvironment.value.validation.warnings.length) {
+    return {
+      tone: 'warning',
+      title: '当前配置可用，但仍有风险提示',
+      description: `发现 ${activeEnvironment.value.validation.warnings.length} 个警告，应用前建议复核。`,
+    };
+  }
+
+  return {
+    tone: 'success',
+    title: '当前配置状态正常',
+    description: '没有发现阻止应用的问题，可以继续测试或直接写回文件。',
+  };
+});
+
 function notify(message: string, type: 'success' | 'warning' | 'error' | 'info' = 'info') {
   ElMessage({ message, type, plain: true });
   window.utools?.showNotification(message);
@@ -356,14 +380,13 @@ function resetJson() {
       <section v-if="store.selectedSection === 'overview'" class="section-grid">
         <el-card class="hero-card" shadow="never">
           <template #header>概览</template>
-          <div class="hero-grid">
-            <div class="hero-metric"><span>默认模型</span><strong>{{ draft.model || '未设置' }}</strong></div>
-            <div class="hero-metric"><span>轻量模型</span><strong>{{ draft.small_model || '未设置' }}</strong></div>
-            <div class="hero-metric"><span>Provider</span><strong>{{ providerEntries.length }}</strong></div>
-            <div class="hero-metric"><span>MCP</span><strong>{{ mcpEntries.length }}</strong></div>
-          </div>
-          <div class="overview-meta">
-            <div class="feedback-stack overview-status-stack">
+          <div class="overview-hero">
+            <div class="overview-hero-main" :class="overviewStatus.tone">
+              <span class="overview-kicker">当前状态</span>
+              <h3>{{ overviewStatus.title }}</h3>
+              <p>{{ overviewStatus.description }}</p>
+            </div>
+            <div class="overview-hero-side">
               <div class="feedback-row overview-status-row">
                 <strong>校验错误</strong>
                 <span class="status-value danger">{{ activeEnvironment.validation.errors.length }}</span>
@@ -372,16 +395,32 @@ function resetJson() {
                 <strong>校验警告</strong>
                 <span class="status-value warning">{{ activeEnvironment.validation.warnings.length }}</span>
               </div>
+              <div class="feedback-row overview-status-row">
+                <strong>最近应用</strong>
+                <span class="status-value neutral">{{ activeEnvironment.lastAppliedAt ? '已执行' : '未执行' }}</span>
+              </div>
             </div>
+          </div>
+          <div class="overview-meta">
             <div class="feedback-stack overview-detail-stack">
               <div class="feedback-row subtle-row">
                 <strong>JSON 解析</strong>
                 <span>{{ activeEnvironment.parseErrors.length ? `${activeEnvironment.parseErrors.length} 处错误` : '正常' }}</span>
               </div>
               <div class="feedback-row subtle-row">
-                <strong>最近应用</strong>
+                <strong>最近应用时间</strong>
                 <span>{{ activeEnvironment.lastAppliedAt ? new Date(activeEnvironment.lastAppliedAt).toLocaleString() : '未执行' }}</span>
               </div>
+              <div class="feedback-row subtle-row">
+                <strong>当前路径</strong>
+                <span>{{ activeEnvironment.sourcePath || '未设置' }}</span>
+              </div>
+            </div>
+            <div class="hero-grid compact-hero-grid">
+              <div class="hero-metric"><span>默认模型</span><strong>{{ draft.model || '未设置' }}</strong></div>
+              <div class="hero-metric"><span>轻量模型</span><strong>{{ draft.small_model || '未设置' }}</strong></div>
+              <div class="hero-metric"><span>Provider</span><strong>{{ providerEntries.length }}</strong></div>
+              <div class="hero-metric"><span>MCP</span><strong>{{ mcpEntries.length }}</strong></div>
             </div>
           </div>
         </el-card>
