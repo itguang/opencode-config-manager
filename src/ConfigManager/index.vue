@@ -432,9 +432,30 @@ async function validateConfig() {
 }
 
 async function applyConfig() {
-  const result = await store.applyActive();
+  const result = await store.applyEnvironment(activeEnvironment.value.id);
   if (!result.ok) {
+    if (result.reason === 'busy') {
+      notify('已有环境正在应用，请稍后再试', 'warning');
+      return;
+    }
     notify(`应用失败：${result.validation.errors.length} 个错误`, 'error');
+    return;
+  }
+  notify(`已应用到 ${result.path}${result.backupPath ? `，备份：${result.backupPath}` : ''}`, 'success');
+}
+
+async function applyEnvironmentFromList(environmentId: string) {
+  const result = await store.applyEnvironment(environmentId);
+  if (!result.ok) {
+    if (result.reason === 'busy') {
+      notify('已有环境正在应用，请稍后再试', 'warning');
+      return;
+    }
+    if (result.reason === 'validation') {
+      notify(`应用失败：${result.validation.errors.length} 个错误`, 'error');
+      return;
+    }
+    notify('应用失败：未找到目标环境', 'error');
     return;
   }
   notify(`已应用到 ${result.path}${result.backupPath ? `，备份：${result.backupPath}` : ''}`, 'success');
@@ -600,9 +621,16 @@ function jumpToNextStep() {
             />
             <span v-else class="environment-pill-name" @dblclick.stop="startEnvironmentRename(item.id, item.name)">{{ item.name }}</span>
             <div class="environment-pill-meta">
-              <small class="environment-status" :class="item.isDirty ? 'environment-status-dirty' : 'environment-status-synced'">
-                {{ item.isDirty ? '未应用' : '同步' }}
-              </small>
+              <el-button
+                size="small"
+                type="primary"
+                class="environment-apply-button"
+                :loading="store.applyingEnvironmentId === item.id"
+                :disabled="!item.isDirty || Boolean(store.applyingEnvironmentId)"
+                @click.stop="applyEnvironmentFromList(item.id)"
+              >
+                应用
+              </el-button>
               <div class="environment-pill-actions" @click.stop>
                 <el-button text size="small" class="environment-inline-button" @click="store.cloneActiveEnvironment">复制</el-button>
                 <el-button
@@ -663,7 +691,15 @@ function jumpToNextStep() {
         </div>
         <div class="header-actions">
           <div class="header-action-cluster">
-            <el-button type="primary" class="header-primary-button" @click="applyConfig">应用到配置</el-button>
+            <el-button
+              type="primary"
+              class="header-primary-button"
+              :loading="store.applyingEnvironmentId === activeEnvironment.id"
+              :disabled="Boolean(store.applyingEnvironmentId) && store.applyingEnvironmentId !== activeEnvironment.id"
+              @click="applyConfig"
+            >
+              应用到配置
+            </el-button>
           </div>
         </div>
       </header>

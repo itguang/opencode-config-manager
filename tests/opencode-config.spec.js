@@ -116,7 +116,7 @@ test('normalizes preferences into a cloneable plain object', () => {
   assert.doesNotThrow(() => structuredClone(normalized));
 });
 
-test('records the active environment as the current effective source after apply', async () => {
+test('applies a specific environment without switching the current editing context', async () => {
   const persisted = [];
   global.window = {
     utools: {
@@ -140,12 +140,29 @@ test('records the active environment as the current effective source after apply
   setActivePinia(createPinia());
   const store = useConfigManagerStore();
   store.initialize();
+  const originalEnvironmentId = store.activeEnvironmentId;
   store.createEnvironment('Daily');
 
   const appliedEnvironmentId = store.activeEnvironmentId;
-  const result = await store.applyActive();
+  const appliedEnvironment = store.environments.find((item) => item.id === appliedEnvironmentId);
+  appliedEnvironment.draft.provider = {
+    openai: {
+      models: {
+        'gpt-5': {},
+      },
+    },
+  };
+  appliedEnvironment.draft.model = 'openai/gpt-5';
+  appliedEnvironment.isDirty = true;
+  store.setActiveEnvironment(originalEnvironmentId);
+
+  const result = await store.applyEnvironment(appliedEnvironmentId);
 
   assert.equal(result.ok, true);
+  assert.equal(store.activeEnvironmentId, originalEnvironmentId);
+  assert.equal(store.applyingEnvironmentId, '');
+  assert.equal(appliedEnvironment.isDirty, false);
+  assert.match(appliedEnvironment.rawText, /"model": "openai\/gpt-5"/);
   assert.equal(store.lastAppliedEnvironmentName, 'Daily');
   assert.deepEqual(persisted.at(-1), {
     key: 'opencode-config-manager.preferences',

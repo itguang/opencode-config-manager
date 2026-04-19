@@ -43,6 +43,7 @@ export const useConfigManagerStore = defineStore('config-manager', {
     selectedSection: 'overview',
     environments: [createEnvironment()],
     activeEnvironmentId: '',
+    applyingEnvironmentId: '',
     lastAppliedEnvironmentName: '',
     selectedProviderId: '',
     selectedModelId: '',
@@ -234,6 +235,18 @@ export const useConfigManagerStore = defineStore('config-manager', {
       return result;
     },
 
+    validateEnvironment(environmentId) {
+      const environment = this.environments.find((item) => item.id === environmentId);
+      if (!environment) {
+        return null;
+      }
+
+      const result = validateDraftConfig(environment.draft);
+      environment.validation = result;
+      environment.parseErrors = [];
+      return result;
+    },
+
     async applyJsonToDraft() {
       const parsed = parseConfigText(this.activeEnvironment.jsonText);
       this.activeEnvironment.parseErrors = parsed.errors;
@@ -260,8 +273,23 @@ export const useConfigManagerStore = defineStore('config-manager', {
       this.activeEnvironment.parseErrors = [];
     },
 
-    async applyActive() {
-      const validation = this.validateActive();
+    async applyEnvironment(environmentId) {
+      const environment = this.environments.find((item) => item.id === environmentId);
+      if (!environment) {
+        return {
+          ok: false,
+          reason: 'missing',
+        };
+      }
+
+      if (this.applyingEnvironmentId) {
+        return {
+          ok: false,
+          reason: 'busy',
+        };
+      }
+
+      const validation = this.validateEnvironment(environmentId);
       if (validation.errors.length) {
         return {
           ok: false,
@@ -270,30 +298,40 @@ export const useConfigManagerStore = defineStore('config-manager', {
         };
       }
 
-      const content = stringifyConfig(this.activeDraft);
-      const response = await window.services.writeOpencodeConfig({
-        path: this.activeEnvironment.sourcePath || this.settings.defaultPath || window.services.getDefaultOpencodeConfigPath(),
-        content,
-        backup: this.settings.autoBackup,
-      });
+      const content = stringifyConfig(environment.draft);
+      this.applyingEnvironmentId = environmentId;
 
-      this.suspendDraftWatch = true;
-      this.activeEnvironment.sourcePath = response.path;
-      this.activeEnvironment.rawText = content;
-      this.activeEnvironment.jsonText = content;
-      this.activeEnvironment.isDirty = false;
-      this.activeEnvironment.lastAppliedAt = new Date().toISOString();
-      this.lastAppliedEnvironmentName = this.activeEnvironment.name;
-      this.suspendDraftWatch = false;
+      try {
+        const response = await window.services.writeOpencodeConfig({
+          path: environment.sourcePath || this.settings.defaultPath || window.services.getDefaultOpencodeConfigPath(),
+          content,
+          backup: this.settings.autoBackup,
+        });
 
-      this.settings.defaultPath = response.path;
-      this.persistPreferences();
+        this.suspendDraftWatch = true;
+        environment.sourcePath = response.path;
+        environment.rawText = content;
+        environment.jsonText = content;
+        environment.isDirty = false;
+        environment.lastAppliedAt = new Date().toISOString();
+        this.lastAppliedEnvironmentName = environment.name;
+        this.suspendDraftWatch = false;
 
-      return {
-        ok: true,
-        backupPath: response.backupPath,
-        path: response.path,
-      };
+        this.settings.defaultPath = response.path;
+        this.persistPreferences();
+
+        return {
+          ok: true,
+          backupPath: response.backupPath,
+          path: response.path,
+        };
+      } finally {
+        this.applyingEnvironmentId = '';
+      }
+    },
+
+    async applyActive() {
+      return this.applyEnvironment(this.activeEnvironmentId);
     },
 
     async refreshReferenceStatuses() {
